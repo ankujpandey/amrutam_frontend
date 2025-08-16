@@ -44,16 +44,13 @@ export default function LoginPage() {
          return
       }
 
-      localStorage.setItem("token", res.token)
-      localStorage.setItem("user", JSON.stringify(res.user))
-
       toast.success("Login successful ✅")
 
-      if (res.user.role === "admin") router.push("/admin")
+      if (res.result.user.role === "admin") router.push("/admin")
       // else if (res.user.role === "doctor") router.push("/doctor")
       else router.push("/dashboard")
     } catch (err: any) {
-      toast.error(err.response?.data?.error || err.response?.data?.message || "Login failed ❌")
+       toast.error(err?.error || err?.message || "Something went wrong")
     }
   }
 
