@@ -1,40 +1,57 @@
 "use client"
 
-import type React from "react"
-import { useState } from "react"
-import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Leaf, Stethoscope } from "lucide-react"
+import { Leaf } from "lucide-react"
+import { toast } from "sonner"
+import { login } from "@/lib/auth"
+import { z } from "zod"
+import { loginSchema } from "@/validation/auth.validation";
+
+type DoctorLoginForm = z.infer<typeof loginSchema>
 
 export default function DoctorLoginPage() {
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [loading, setLoading] = useState(false)
   const router = useRouter()
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<DoctorLoginForm>({
+    resolver: zodResolver(loginSchema),
+  })
 
-    // TODO: Implement doctor authentication logic
-    console.log("Doctor login attempt:", { email, password })
+  const onSubmit = async (data: DoctorLoginForm) => {
+    try {
+      const res = await login(data)
 
-    // Simulate API call
-    setTimeout(() => {
-      setLoading(false)
-      // Mock logic to determine doctor status
-      const mockDoctorStatus = "approved" // This would come from API: pending, under_review, approved, rejected
+      if (!res.success) {
+        toast.error(res.message || "Login failed")
+        return
+      }
 
-      if (mockDoctorStatus === "approved") {
+      const { role, doctorApplication } = res.result.user
+
+      if (role !== "doctor") {
+        toast.error("Only doctors can login here")
+        return
+      }
+
+      if (doctorApplication?.status === "approved") {
+        toast.success("Welcome Doctor!")
         router.push("/doctor/dashboard")
       } else {
+        toast.info(`Application status: ${doctorApplication?.status || "pending"}`)
         router.push("/doctor/application-status")
       }
-    }, 1000)
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || err.response?.data?.message || "Something went wrong")
+    }
   }
 
   return (
@@ -47,64 +64,46 @@ export default function DoctorLoginPage() {
           </div>
         </CardHeader>
         <CardContent className="p-8">
-          <div className="text-center mb-6">
-            <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Stethoscope className="h-8 w-8 text-primary" />
-            </div>
-            <h1 className="text-2xl font-bold">Doctor Login</h1>
-            <p className="text-muted-foreground">Access your practice dashboard</p>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <h1 className="text-2xl font-bold mb-6">Doctor Login</h1>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
                 type="email"
-                placeholder="Enter your registered email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
+                placeholder="Enter your email"
+                {...register("email")}
               />
+              {errors.email && <p className="text-sm text-red-500">{errors.email.message}</p>}
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
               <Input
                 id="password"
                 type="password"
                 placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
+                {...register("password")}
               />
+              {errors.password && <p className="text-sm text-red-500">{errors.password.message}</p>}
             </div>
-            <div className="text-right">
-              <Link href="/doctor/forgot-password" className="text-sm text-primary hover:underline">
-                Forgot password?
-              </Link>
-            </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Signing in..." : "Login to Dashboard"}
+
+            <Button type="submit" className="w-full" disabled={isSubmitting}>
+              {isSubmitting ? "Signing in..." : "Login"}
             </Button>
           </form>
 
           <div className="mt-6 text-center">
             <span className="text-muted-foreground">Not registered as a doctor? </span>
-            <Link href="/doctor/register" className="text-primary hover:underline">
+            <a href="/doctor/register" className="text-primary hover:underline">
               Apply now
-            </Link>
+            </a>
           </div>
 
           <div className="mt-4 text-center">
-            <Link href="/doctor/application-status" className="text-sm text-primary hover:underline">
-              Check Application Status
-            </Link>
-          </div>
-
-          <div className="mt-4 text-center">
-            <Link href="/login" className="text-sm text-muted-foreground hover:underline">
+            <a href="/login" className="text-sm text-muted-foreground hover:underline">
               Patient Login
-            </Link>
+            </a>
           </div>
         </CardContent>
       </Card>

@@ -1,35 +1,55 @@
-"use client"
+"use client";
 
-import type React from "react"
+import { useRouter } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { toast } from "sonner";
+import { signupSchema } from "@/validation/auth.validation";
+import { signup } from "@/lib/auth";
+import { z } from "zod";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Leaf } from "lucide-react";
 
-import { useState } from "react"
-import Link from "next/link"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Leaf } from "lucide-react"
+type SignupForm = z.infer<typeof signupSchema>
+type SignupPayload = Omit<SignupForm, "confirmPassword">
 
 export default function SignupPage() {
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    phone: "",
-    password: "",
-    confirmPassword: "",
+  const router = useRouter()
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<SignupForm>({
+    resolver: zodResolver(signupSchema),
+    defaultValues: { role: "patient" },
   })
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData((prev) => ({
-      ...prev,
-      [e.target.name]: e.target.value,
-    }))
-  }
+  const onSubmit = async (data: SignupForm) => {
+    try {
+      const payload: SignupPayload = {
+        name: data.name,
+        email: data.email,
+        phone: data.phone,
+        password: data.password,
+        role: data.role,
+      }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    // TODO: Implement signup logic
-    console.log("Signup attempt:", formData)
+      const res = await signup(payload);
+  
+      localStorage.setItem("token", res.token)
+      localStorage.setItem("user", JSON.stringify(res.user))
+  
+      toast.success("Signup successful 🎉")
+      router.push("/dashboard")
+    } catch (err: any) {
+      const message =
+      err.response?.data?.error || err.response?.data?.message || "Signup failed ❌"
+      toast.error(message)
+    }
   }
 
   return (
@@ -43,71 +63,77 @@ export default function SignupPage() {
         </CardHeader>
         <CardContent className="p-8">
           <h1 className="text-2xl font-bold mb-6">Signup</h1>
-          <form onSubmit={handleSubmit} className="space-y-4">
+
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
               <Input
                 id="name"
-                name="name"
                 type="text"
                 placeholder="Enter your full name"
-                value={formData.name}
-                onChange={handleChange}
+                {...register("name")}
                 required
               />
+              {errors.name && <p className="text-red-500 text-sm">{errors.name.message}</p>}
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
-                name="email"
                 type="email"
                 placeholder="Enter your email"
-                value={formData.email}
-                onChange={handleChange}
+                {...register("email")}
                 required
               />
+              {errors.email && <p className="text-red-500 text-sm">{errors.email.message}</p>}
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="phone">Phone</Label>
               <Input
                 id="phone"
-                name="phone"
                 type="tel"
                 placeholder="Enter your phone number"
-                value={formData.phone}
-                onChange={handleChange}
+                {...register("phone")}
                 required
               />
+              {errors.phone && <p className="text-red-500 text-sm">{errors.phone.message}</p>}
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
               <Input
                 id="password"
-                name="password"
                 type="password"
                 placeholder="Create a password"
-                value={formData.password}
-                onChange={handleChange}
+                {...register("password")}
                 required
               />
+              {errors.password && <p className="text-red-500 text-sm">{errors.password.message}</p>}
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="confirmPassword">Confirm Password</Label>
               <Input
                 id="confirmPassword"
-                name="confirmPassword"
                 type="password"
                 placeholder="Confirm your password"
-                value={formData.confirmPassword}
-                onChange={handleChange}
+                {...register("confirmPassword")}
                 required
               />
+              {errors.confirmPassword && (
+                <p className="text-red-500 text-sm">{errors.confirmPassword.message}</p>
+              )}
             </div>
-            <Button type="submit" className="w-full">
-              Signup
+
+            <input type="hidden" value="patient" {...register("role")} />
+
+            <Button type="submit" className="w-full" disabled={isSubmitting}>
+              {isSubmitting ? "Signing up..." : "Signup"}
             </Button>
           </form>
+
           <div className="mt-6 text-center">
             <span className="text-muted-foreground">Already have an account? </span>
             <Link href="/login" className="text-primary hover:underline">
