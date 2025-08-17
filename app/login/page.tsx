@@ -46,7 +46,7 @@ export default function LoginPage() {
 
       toast.success("Login successful ✅")
 
-      if (res.result.user.role === "admin") router.push("/admin")
+      if (res.result.user.role === "admin") router.push("/admin/dashboard")
       // else if (res.user.role === "doctor") router.push("/doctor")
       else router.push("/dashboard")
     } catch (err: any) {

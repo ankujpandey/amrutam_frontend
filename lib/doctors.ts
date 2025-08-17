@@ -8,11 +8,15 @@ export async function getDoctors(filters?: { specialization?: string; mode?: str
         sortBy: filters?.sortBy,
       },
     })
-    const response = handleResponse(res);
-    return response;
+    
+    return handleResponse(res);
 }
 
 export async function getDoctorById(id: string) {
-  const res = await api.get(`/doctors/${id}`);
-  return res.data;
+  const res = await api.get(`/doctors/doctor/${id}`);
+
+  return handleResponse(res);
 }
+
+
+

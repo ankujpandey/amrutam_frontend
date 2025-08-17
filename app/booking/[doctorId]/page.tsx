@@ -1,97 +1,122 @@
 "use client"
 
-import { useState } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useEffect, useState  } from "react"
+import { useParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Calendar } from "@/components/ui/calendar"
+import { styled } from "@mui/material/styles";
+import { format } from "date-fns";
 import { Leaf, ArrowLeft, Clock, Monitor, MapPin, Star } from "lucide-react"
+import { getAvailableSlots, lockSlot, unlockSlot, confirmSlot } from "@/lib/appointments"
+import { getDoctorById } from "@/lib/doctors"
 
-// Mock doctor data (in real app, this would come from API)
-const mockDoctors = {
-  "1": {
-    id: 1,
-    name: "Dr. Arvind",
-    specialization: "Ayurveda",
-    mode: "Online",
-    image: "/doctor.jpg?height=80&width=80",
-    rating: 4.8,
-    experience: "15 years",
-    consultationFee: 500,
-  },
-  "2": {
-    id: 2,
-    name: "Dr. Sushila",
-    specialization: "Ayurveda",
-    mode: "Online",
-    image: "/doctor.jpg?height=80&width=80",
-    rating: 4.9,
-    experience: "12 years",
-    consultationFee: 600,
-  },
-  "3": {
-    id: 3,
-    name: "Dr. Prakash",
-    specialization: "Ayurveda",
-    mode: "In-person",
-    image: "/doctor.jpg?height=80&width=80",
-    rating: 4.7,
-    experience: "20 years",
-    consultationFee: 800,
-  },
-}
+import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns"
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider"
+import { DateCalendar } from "@mui/x-date-pickers/DateCalendar"
 
-// Mock available time slots
-const timeSlots = [
-  "09:00",
-  "09:30",
-  "10:00",
-  "10:30",
-  "11:00",
-  "11:30",
-  "14:00",
-  "14:30",
-  "15:00",
-  "15:30",
-  "16:00",
-  "16:30",
-]
+const CustomDateCalendar = styled(DateCalendar)(({ theme }) => ({
+  "& .MuiPickersDay-root.Mui-selected": {
+    backgroundColor: "var(--primary)",
+    color: "#fff",
+    "&:hover": {
+      backgroundColor: "oklch(0.45 0.12 65)",
+    },
+  },
+  "& .MuiPickersDay-root.Mui-disabled": {
+    color: theme.palette.text.disabled,
+    backgroundColor: "transparent",
+  },
+  "& .MuiPickersDay-root:not(.Mui-selected)": {
+    borderRadius: "50%", // keep it round
+  },
+}))
 
 export default function BookingPage() {
   const params = useParams()
-  const router = useRouter()
   const doctorId = params.doctorId as string
-  const doctor = mockDoctors[doctorId as keyof typeof mockDoctors]
 
-  const [selectedDate, setSelectedDate] = useState<Date>()
-  const [selectedTime, setSelectedTime] = useState<string>("")
+  const [doctor, setDoctor] = useState<any>(null) // fetch doctor details later
+  const [loading, setLoading] = useState(true)
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null)
+  const [availableSlots, setAvailableSlots] = useState<any[]>([])
+  const [selectedSlot, setSelectedSlot] = useState<any>(null)
+  const [selectedMode, setSelectedMode] = useState<string>("online");
+
+
   const [step, setStep] = useState<"select" | "confirm" | "otp" | "success">("select")
   const [otp, setOtp] = useState("")
   const [isSlotLocked, setIsSlotLocked] = useState(false)
   const [lockTimer, setLockTimer] = useState(0)
 
-  if (!doctor) {
-    return <div>Doctor not found</div>
+
+  useEffect(() => {
+  const fetchDoctor = async () => {
+    try {
+      const res = await getDoctorById(doctorId)
+      if (res.success) {
+        setDoctor(res.result)
+      }
+    } catch (err) {
+      console.error("Error fetching doctor", err)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const handleTimeSelect = (time: string) => {
-    setSelectedTime(time)
-  }
+  if (doctorId) fetchDoctor()
+}, [doctorId])
 
-  const handleBookingConfirm = () => {
-    if (selectedDate && selectedTime) {
+  // 🔹 Fetch slots when date changes
+  useEffect(() => {
+  if (!selectedDate) return;
+  
+  const formattedDate = format(selectedDate, "yyyy-MM-dd");
+
+  (async () => {
+    try {
+      const res = await getAvailableSlots(
+        doctorId,
+        formattedDate
+      )
+      setAvailableSlots(res.result || [])
+    } catch (err) {
+      console.error("Error fetching slots", err)
+    }
+  })()
+}, [selectedDate, doctorId])
+
+
+  // 🔹 Lock slot
+  const handleBookingConfirm = async () => {
+  if (!selectedSlot || !selectedMode || !selectedDate) return;
+
+  const formattedDate = format(selectedDate, "yyyy-MM-dd");
+
+  try {
+    const res = await lockSlot({
+      doctorId,
+      date: formattedDate,
+      start: selectedSlot.start,
+      end: selectedSlot.end,
+      mode: selectedMode,
+    });
+    console.log("Lock slot response:", res)
+
+    if (res.success) {
       setStep("confirm")
       setIsSlotLocked(true)
-      setLockTimer(300) // 5 minutes in seconds
+      setLockTimer(300)
 
-      // Start countdown timer
+      // countdown
       const timer = setInterval(() => {
         setLockTimer((prev) => {
           if (prev <= 1) {
             clearInterval(timer)
             setIsSlotLocked(false)
+            unlockSlot(selectedSlot._id) // release slot if expired
             setStep("select")
             return 0
           }
@@ -99,12 +124,28 @@ export default function BookingPage() {
         })
       }, 1000)
     }
+  } catch (err) {
+    console.error("Lock slot failed", err)
   }
+}
 
-  const handleOtpSubmit = () => {
-    if (otp === "1234") {
-      // Mock OTP verification
-      setStep("success")
+  // 🔹 Confirm after OTP
+  const handleOtpSubmit = async () => {
+    if (!selectedDate) return; 
+    const formattedDate = format(selectedDate, "yyyy-MM-dd");
+
+    try {
+      const res = await confirmSlot(
+        doctorId,
+        formattedDate,
+        selectedSlot,
+        selectedMode
+      );
+      if (res.success) {
+        setStep("success")
+      }
+    } catch (err) {
+      console.error("Booking confirm failed", err)
     }
   }
 
@@ -113,6 +154,9 @@ export default function BookingPage() {
     const secs = seconds % 60
     return `${mins}:${secs.toString().padStart(2, "0")}`
   }
+
+  if (loading) return <div>Loading...</div>
+  if (!doctor) return <div>Doctor not found</div>
 
   return (
     <div className="min-h-screen bg-background">
@@ -132,7 +176,9 @@ export default function BookingPage() {
           <>
             <div className="mb-8">
               <h1 className="text-3xl font-bold mb-2">Book Appointment</h1>
-              <p className="text-muted-foreground">Select your preferred date and time</p>
+              <p className="text-muted-foreground">
+                Select your preferred date and time
+              </p>
             </div>
 
             <div className="grid lg:grid-cols-3 gap-8">
@@ -148,26 +194,48 @@ export default function BookingPage() {
                       />
                       <div>
                         <h3 className="text-xl font-semibold">{doctor.name}</h3>
-                        <p className="text-muted-foreground">{doctor.specialization}</p>
+                        <p className="text-muted-foreground">
+                          {doctor.doctorApplication?.bio || "No bio available"}
+                        </p>
                       </div>
-                      <div className="flex items-center justify-center gap-4 text-sm">
-                        <div className="flex items-center gap-1">
-                          {doctor.mode === "Online" ? (
+                      <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-4 text-xs sm:text-sm">
+                        {doctor.modes.includes("online") && (
+                          <div className="flex items-center justify-center gap-1">
                             <Monitor className="h-4 w-4 text-primary" />
-                          ) : (
+                            <span>Online</span>
+                          </div>
+                        )}
+                        {doctor.modes.includes("in-person") && (
+                          <div className="flex items-center justify-center gap-1">
                             <MapPin className="h-4 w-4 text-primary" />
+                            <span>In-person</span>
+                          </div>
+                        )}
+                        <div className="flex flex-wrap items-center justify-center gap-2">
+                          {doctor.specialization &&
+                          doctor.specialization.length > 0 ? (
+                            doctor.specialization.map(
+                              (spec: string, index: number) => (
+                                <Badge
+                                  key={index}
+                                  variant="secondary"
+                                  className="text-xs">
+                                  {spec}
+                                </Badge>
+                              )
+                            )
+                          ) : (
+                            <Badge variant="secondary" className="text-xs">
+                              Experienced Doctor
+                            </Badge>
                           )}
-                          <span>{doctor.mode}</span>
                         </div>
-                        <Badge variant="secondary">{doctor.experience}</Badge>
-                      </div>
-                      <div className="flex items-center justify-center gap-1">
-                        <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                        <span>{doctor.rating}</span>
                       </div>
                       <div className="pt-4 border-t">
-                        <p className="text-lg font-semibold">₹{doctor.consultationFee}</p>
-                        <p className="text-sm text-muted-foreground">Consultation Fee</p>
+                        <p className="text-lg font-semibold">₹{500}</p>
+                        <p className="text-sm text-muted-foreground">
+                          Consultation Fee
+                        </p>
                       </div>
                     </div>
                   </CardContent>
@@ -181,20 +249,40 @@ export default function BookingPage() {
                     <h3 className="text-lg font-semibold">Select Date</h3>
                   </CardHeader>
                   <CardContent>
-                    <Calendar
-                      mode="single"
-                      selected={selectedDate}
-                      onSelect={setSelectedDate}
-                      disabled={(date) => date < new Date() || date < new Date("1900-01-01")}
-                      className="rounded-md border"
-                    />
+                    <LocalizationProvider dateAdapter={AdapterDateFns}>
+                      <CustomDateCalendar
+                        value={selectedDate}
+                        onChange={(newDate: Date | null) =>
+                          setSelectedDate(newDate)
+                        }
+                        disablePast
+                        shouldDisableDate={date => {
+                          if (!doctor?.availability) return true;
+                          const dayMap: Record<string, number> = {
+                            Sun: 0,
+                            Mon: 1,
+                            Tue: 2,
+                            Wed: 3,
+                            Thu: 4,
+                            Fri: 5,
+                            Sat: 6,
+                          };
+                          const allowedDays = doctor.availability.map(
+                            (av: any) => dayMap[av.day]
+                          );
+                          return !allowedDays.includes(date.getDay());
+                        }}
+                      />
+                    </LocalizationProvider>
                   </CardContent>
                 </Card>
 
-                {selectedDate && (
+                {selectedDate && availableSlots.length > 0 && (
                   <Card>
                     <CardHeader>
-                      <h3 className="text-lg font-semibold">Available Time Slots</h3>
+                      <h3 className="text-lg font-semibold">
+                        Available Time Slots
+                      </h3>
                       <p className="text-sm text-muted-foreground">
                         {selectedDate.toLocaleDateString("en-US", {
                           weekday: "long",
@@ -206,25 +294,52 @@ export default function BookingPage() {
                     </CardHeader>
                     <CardContent>
                       <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-                        {timeSlots.map((time) => (
+                        {availableSlots.map((slot, idx) => (
                           <Button
-                            key={time}
-                            variant={selectedTime === time ? "default" : "outline"}
-                            onClick={() => handleTimeSelect(time)}
-                            className="flex items-center gap-1"
-                          >
+                            key={`${slot.start}-${slot.end}-${idx}`}
+                            variant={
+                              selectedSlot === slot ? "default" : "outline"
+                            }
+                            onClick={() => setSelectedSlot(slot)}
+                            className="flex items-center gap-1">
                             <Clock className="h-4 w-4" />
-                            {time}
+                            {slot.start} - {slot.end}
                           </Button>
                         ))}
+
+                        {/* Mode Selection */}
+                        {doctor.modes && doctor.modes.length > 0 && (
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium">Select Mode</p>
+                            <div className="flex gap-3 flex-wrap">
+                              {doctor.modes.map(
+                                (mode: string, index: number) => (
+                                  <Button
+                                    key={index}
+                                    variant={
+                                      selectedMode === mode
+                                        ? "default"
+                                        : "outline"
+                                    }
+                                    onClick={() => setSelectedMode(mode)}>
+                                    {mode === "online" ? "Online" : "In-person"}
+                                  </Button>
+                                )
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
                 )}
 
-                {selectedDate && selectedTime && (
+                {selectedDate && selectedSlot && selectedMode && (
                   <div className="flex justify-end">
-                    <Button onClick={handleBookingConfirm} size="lg" className="px-8">
+                    <Button
+                      onClick={handleBookingConfirm}
+                      size="lg"
+                      className="px-8">
                       Confirm Booking
                     </Button>
                   </div>
@@ -241,7 +356,8 @@ export default function BookingPage() {
               {isSlotLocked && (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mt-4">
                   <p className="text-sm text-yellow-800">
-                    This slot will be locked for <span className="font-bold">{formatTimer(lockTimer)}</span>
+                    This slot will be locked for{" "}
+                    <span className="font-bold">{formatTimer(lockTimer)}</span>
                   </p>
                 </div>
               )}
@@ -255,7 +371,9 @@ export default function BookingPage() {
                 />
                 <div>
                   <h3 className="font-semibold">{doctor.name}</h3>
-                  <p className="text-muted-foreground">{doctor.specialization}</p>
+                  <p className="text-muted-foreground">
+                    {doctor.specialization.join(", ") || "General Practitioner"}
+                  </p>
                 </div>
               </div>
 
@@ -273,20 +391,27 @@ export default function BookingPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Time:</span>
-                  <span className="font-medium">{selectedTime}</span>
+                  <span className="font-medium">
+                    {selectedSlot.start} - {selectedSlot.end}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Mode:</span>
-                  <span className="font-medium">{doctor.mode}</span>
+                  <span className="font-medium">
+                    {selectedMode === "online" ? "Online" : "In-person"}
+                  </span>
                 </div>
                 <div className="flex justify-between border-t pt-3">
                   <span className="font-semibold">Total Fee:</span>
-                  <span className="font-semibold">₹{doctor.consultationFee}</span>
+                  <span className="font-semibold">₹{500}</span>
                 </div>
               </div>
 
               <div className="flex gap-4">
-                <Button variant="outline" onClick={() => setStep("select")} className="flex-1">
+                <Button
+                  variant="outline"
+                  onClick={() => setStep("select")}
+                  className="flex-1">
                   Back
                 </Button>
                 <Button onClick={() => setStep("otp")} className="flex-1">
@@ -301,7 +426,9 @@ export default function BookingPage() {
           <Card className="max-w-md mx-auto">
             <CardHeader className="text-center">
               <h2 className="text-2xl font-bold">Verify OTP</h2>
-              <p className="text-muted-foreground">Enter the OTP sent to your phone</p>
+              <p className="text-muted-foreground">
+                Enter the OTP sent to your phone
+              </p>
             </CardHeader>
             <CardContent className="space-y-6">
               <div>
@@ -309,13 +436,18 @@ export default function BookingPage() {
                   type="text"
                   placeholder="Enter 4-digit OTP"
                   value={otp}
-                  onChange={(e) => setOtp(e.target.value)}
+                  onChange={e => setOtp(e.target.value)}
                   className="w-full p-3 border rounded-lg text-center text-2xl tracking-widest"
                   maxLength={4}
                 />
-                <p className="text-sm text-muted-foreground mt-2 text-center">Demo OTP: 1234</p>
+                <p className="text-sm text-muted-foreground mt-2 text-center">
+                  Demo OTP: 1234
+                </p>
               </div>
-              <Button onClick={handleOtpSubmit} className="w-full" disabled={otp.length !== 4}>
+              <Button
+                onClick={handleOtpSubmit}
+                className="w-full"
+                disabled={otp.length !== 4}>
                 Verify & Book
               </Button>
             </CardContent>
@@ -326,13 +458,26 @@ export default function BookingPage() {
           <Card className="max-w-2xl mx-auto">
             <CardContent className="p-8 text-center space-y-6">
               <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
-                <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                <svg
+                  className="w-8 h-8 text-green-600"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5 13l4 4L19 7"
+                  />
                 </svg>
               </div>
               <div>
-                <h2 className="text-2xl font-bold text-green-600 mb-2">Booking Confirmed!</h2>
-                <p className="text-muted-foreground">Your appointment has been successfully booked</p>
+                <h2 className="text-2xl font-bold text-green-600 mb-2">
+                  Booking Confirmed!
+                </h2>
+                <p className="text-muted-foreground">
+                  Your appointment has been successfully booked
+                </p>
               </div>
 
               <div className="bg-muted p-6 rounded-lg text-left space-y-3">
@@ -353,11 +498,15 @@ export default function BookingPage() {
                 </div>
                 <div className="flex justify-between">
                   <span>Time:</span>
-                  <span className="font-medium">{selectedTime}</span>
+                  <span className="font-medium">
+                    {selectedSlot.start} - {selectedSlot.end}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Booking ID:</span>
-                  <span className="font-medium">AMR{Date.now().toString().slice(-6)}</span>
+                  <span className="font-medium">
+                    AMR{Date.now().toString().slice(-6)}
+                  </span>
                 </div>
               </div>
 
@@ -376,5 +525,5 @@ export default function BookingPage() {
         )}
       </div>
     </div>
-  )
+  );
 }

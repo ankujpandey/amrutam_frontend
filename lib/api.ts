@@ -13,8 +13,16 @@ const api = axios.create({
 // Attach token before every request
 api.interceptors.request.use((config) => {
   const token = Cookies.get("token");
+  const userData = localStorage.getItem("user");
+
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+
+  if (userData) {
+    const user = JSON.parse(userData);
+    config.headers["x-user-id"] = user.id;   // optional extra
+    config.headers["x-user-role"] = user.role; // optional extra
   }
   return config;
 });
