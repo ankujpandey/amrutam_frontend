@@ -42,3 +42,7 @@ export async function confirmSlot(
   return handleResponse(res);
 }
 
+export async function getMyAppointments() {
+  const res = await api.get("/appointments/my");
+  return handleResponse(res);
+}
